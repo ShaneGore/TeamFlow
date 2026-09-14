@@ -1,0 +1,417 @@
+openapi: 3.0.3
+info:
+  title: TeamFlow API
+  version: 0.1.0
+  description: >
+    HTTP/JSON API for the TeamFlow mini Kanban board: one shared board with
+    fixed columns (todo, in_progress, done), task CRUD, drag-and-drop/status
+    moves, and named team members. This file is the source of truth for the
+    FastAPI backend in backend/app. The frontend calls it exclusively through
+    frontend/src/api/client.js.
+servers:
+  - url: http://localhost:8000
+    description: Local FastAPI backend
+tags:
+  - name: Health
+    description: Service liveness
+  - name: Tasks
+    description: Task CRUD and status moves
+  - name: Team members
+    description: Named members assignable to tasks
+paths:
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Backend health check
+      operationId: getHealth
+      responses:
+        '200':
+          description: Backend is running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /api/tasks:
+    get:
+      tags: [Tasks]
+      summary: List tasks
+      operationId: listTasks
+      parameters:
+        - $ref: '#/components/parameters/TaskStatusQuery'
+        - $ref: '#/components/parameters/AssigneeQuery'
+      responses:
+        '200':
+          description: Persisted tasks, optionally filtered
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+    post:
+      tags: [Tasks]
+      summary: Create a task
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+      responses:
+        '201':
+          description: Created task (server-confirmed state)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /api/tasks/{taskId}:
+    get:
+      tags: [Tasks]
+      summary: Get one task
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: The requested task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Tasks]
+      summary: Update editable task fields
+      operationId: updateTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdate'
+      responses:
+        '200':
+          description: Updated task (server-confirmed state)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+    delete:
+      tags: [Tasks]
+      summary: Delete a task
+      operationId: deleteTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '204':
+          description: Task deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/tasks/{taskId}/status:
+    patch:
+      tags: [Tasks]
+      summary: Move a task (drag-and-drop or status control)
+      operationId: updateTaskStatus
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusUpdate'
+      responses:
+        '200':
+          description: Task with confirmed persisted status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /api/team-members:
+    get:
+      tags: [Team members]
+      summary: List team members
+      operationId: listMembers
+      responses:
+        '200':
+          description: All named team members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TeamMember'
+    post:
+      tags: [Team members]
+      summary: Create a team member
+      operationId: createMember
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamMemberCreate'
+            examples:
+              alice:
+                value:
+                  name: Alice
+      responses:
+        '201':
+          description: Created member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMember'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /api/team-members/{memberId}:
+    delete:
+      tags: [Team members]
+      summary: Delete a member with no assigned tasks
+      operationId: deleteMember
+      parameters:
+        - $ref: '#/components/parameters/MemberId'
+      responses:
+        '204':
+          description: Member deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+components:
+  parameters:
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    TaskStatusQuery:
+      name: status
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/TaskStatus'
+    AssigneeQuery:
+      name: assignee_id
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    TaskStatus:
+      type: string
+      enum: [todo, in_progress, done]
+      example: todo
+    TaskPriority:
+      type: string
+      enum: [low, medium, high]
+      example: high
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+    TeamMember:
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id:
+          type: integer
+          example: 3
+        name:
+          type: string
+          example: Bob
+        created_at:
+          type: string
+          format: date-time
+    TeamMemberCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          example: Alice
+    Task:
+      type: object
+      required: [id, title, status, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          example: 12
+        title:
+          type: string
+          example: Build API
+        description:
+          type: string
+          default: ''
+          example: Implement task endpoints.
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        priority:
+          oneOf:
+            - $ref: '#/components/schemas/TaskPriority'
+            - type: 'null'
+          default: null
+        due_date:
+          oneOf:
+            - type: string
+              format: date
+            - type: 'null'
+          default: null
+          example: '2026-10-05'
+        label:
+          type: string
+          default: ''
+          example: backend
+        assignee_id:
+          oneOf:
+            - type: integer
+            - type: 'null'
+          default: null
+        assignee_name:
+          oneOf:
+            - type: string
+            - type: 'null'
+          default: null
+          example: Bob
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TaskCreate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: Build login screen
+        description:
+          type: string
+          default: ''
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+          default: todo
+        priority:
+          oneOf:
+            - $ref: '#/components/schemas/TaskPriority'
+            - type: 'null'
+          default: null
+        due_date:
+          oneOf:
+            - type: string
+              format: date
+            - type: 'null'
+          default: null
+          example: '2026-10-01'
+        label:
+          type: string
+          maxLength: 60
+          default: ''
+        assignee_id:
+          oneOf:
+            - type: integer
+            - type: 'null'
+          default: null
+    TaskUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        priority:
+          oneOf:
+            - $ref: '#/components/schemas/TaskPriority'
+            - type: 'null'
+        due_date:
+          oneOf:
+            - type: string
+              format: date
+            - type: 'null'
+        label:
+          type: string
+          maxLength: 60
+        assignee_id:
+          oneOf:
+            - type: integer
+            - type: 'null'
+    StatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          example: Task not found.
+        details:
+          oneOf:
+            - type: object
+              additionalProperties:
+                type: string
+            - type: 'null'
+          default: null
+  responses:
+    NotFound:
+      description: Resource does not exist; body never leaks DB details
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Uniqueness or relationship conflict (duplicate member, assigned member)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unprocessable:
+      description: Validation failed; details maps field names to messages
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+
